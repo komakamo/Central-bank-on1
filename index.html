@@ -405,7 +405,10 @@
             const val = grid[y][x];
             const index = y * GRID_SIZE + x;
             const cell = gridEl.children[index];
-            
+
+            // Reset inline styles to ensure fresh state
+            cell.style.backgroundColor = '';
+
             // Clear classes
             cell.className = 'grid-cell w-12 h-12 md:w-16 md:h-16 rounded border flex items-center justify-center font-bold text-sm md:text-xl number-font select-none relative transition-colors duration-300';
             
