@@ -1,1 +1,593 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Central Banker: Economy Puzzle</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Roboto+Mono:wght@400;700&display=swap');
 
+        body {
+            font-family: 'Noto Serif JP', serif;
+            background-color: #1a202c; /* Gray 900 */
+            color: #e2e8f0; /* Gray 200 */
+            overflow: hidden; /* Prevent scrolling on mobile */
+            touch-action: manipulation;
+        }
+
+        .grid-cell {
+            transition: all 0.3s ease;
+            cursor: pointer;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+        }
+
+        .grid-cell:active {
+            transform: scale(0.95);
+        }
+
+        /* Tooltip animation */
+        @keyframes float-up {
+            0% { transform: translateY(0); opacity: 1; }
+            100% { transform: translateY(-20px); opacity: 0; }
+        }
+        .policy-effect {
+            position: absolute;
+            pointer-events: none;
+            font-weight: bold;
+            font-family: 'Roboto Mono', monospace;
+            animation: float-up 1s ease-out forwards;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+            z-index: 50;
+        }
+
+        /* Scanline effect for that retro terminal feel */
+        .crt::before {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 2;
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+        }
+
+        .number-font {
+            font-family: 'Roboto Mono', monospace;
+        }
+
+        .selected-tool {
+            box-shadow: 0 0 15px rgba(250, 204, 21, 0.6);
+            border-color: #facc15;
+            transform: translateY(-2px);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #2d3748; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #4a5568; 
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col crt">
+
+    <!-- Header -->
+    <header class="bg-gray-900 border-b border-gray-700 p-3 flex justify-between items-center z-10 shadow-lg">
+        <div class="flex items-center gap-3">
+            <i class="fas fa-landmark text-2xl text-yellow-500"></i>
+            <div>
+                <h1 class="text-lg md:text-xl font-bold tracking-widest text-white">CENTRAL BANK</h1>
+                <p class="text-xs text-gray-400 uppercase tracking-wider">Monetary Policy Simulator</p>
+            </div>
+        </div>
+        <div class="text-right">
+            <div class="text-xs text-gray-400">任期 (スコア)</div>
+            <div id="score-display" class="text-xl font-bold number-font text-yellow-400">0ヶ月</div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+        
+        <!-- Sidebar: Stats & Info -->
+        <aside class="w-full md:w-64 bg-gray-800 border-r border-gray-700 p-4 flex flex-col gap-4 z-10 order-2 md:order-1 h-auto md:h-full overflow-y-auto">
+            
+            <!-- Global Meter -->
+            <div class="bg-gray-900 p-4 rounded border border-gray-700 shadow-inner">
+                <h3 class="text-xs text-gray-400 mb-2 uppercase flex justify-between">
+                    <span>平均物価指数 (CPI)</span>
+                    <span id="target-indicator" class="text-green-400"><i class="fas fa-crosshairs"></i> 目標 2.0%</span>
+                </h3>
+                <div class="relative h-4 bg-gray-700 rounded-full overflow-hidden mb-1">
+                    <div id="cpi-bar" class="absolute top-0 bottom-0 w-1 bg-white transition-all duration-300" style="left: 50%; width: 4px; transform: translateX(-50%);"></div>
+                    <!-- Zones -->
+                    <div class="absolute top-0 bottom-0 left-0 w-1/4 bg-blue-900 opacity-50"></div>
+                    <div class="absolute top-0 bottom-0 right-0 w-1/4 bg-red-900 opacity-50"></div>
+                </div>
+                <div class="flex justify-between text-xs font-mono text-gray-500">
+                    <span>デフレ</span>
+                    <span id="cpi-value" class="text-white font-bold text-lg">-</span>
+                    <span>インフレ</span>
+                </div>
+                <div id="stability-text" class="text-center text-xs mt-1 font-bold text-green-500">安定</div>
+            </div>
+
+            <!-- News Ticker -->
+            <div class="bg-gray-900 p-3 rounded border border-gray-700 flex-1 min-h-[100px]">
+                <h3 class="text-xs text-gray-400 mb-2 uppercase border-b border-gray-800 pb-1">市場ニュース</h3>
+                <div id="news-feed" class="text-xs space-y-2 font-mono h-32 md:h-auto overflow-y-auto text-gray-300">
+                    <p class="text-gray-500 italic">> システム起動...</p>
+                    <p class="text-gray-500 italic">> 市場監視を開始します。</p>
+                </div>
+            </div>
+
+            <!-- Controls Info -->
+            <div class="hidden md:block text-xs text-gray-500 mt-auto">
+                <p>ヒント: インフレ(赤)には利上げ、デフレ(青)には利下げを行ってください。</p>
+            </div>
+        </aside>
+
+        <!-- Game Area -->
+        <div class="flex-1 bg-gray-900 relative flex flex-col items-center justify-center p-2 md:p-6 order-1 md:order-2">
+            
+            <!-- Game Grid -->
+            <div id="game-grid" class="grid grid-cols-5 gap-1 md:gap-2 p-2 bg-gray-800 rounded-lg shadow-2xl border border-gray-600 relative select-none">
+                <!-- Cells generated by JS -->
+            </div>
+
+            <!-- Mobile Controls (Bottom fixed on mobile) -->
+            <div class="md:hidden w-full mt-2 text-center text-xs text-gray-400">
+                下部のツールを選択してグリッドをタップ
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer: Tools -->
+    <footer class="bg-gray-800 border-t border-gray-700 p-2 md:p-4 z-20 shadow-[0_-5px_15px_rgba(0,0,0,0.3)]">
+        <div class="max-w-4xl mx-auto flex justify-around md:justify-center gap-2 md:gap-6">
+            
+            <!-- Tool: Interest Rate Cut (Stimulate) -->
+            <button onclick="selectTool('cut')" id="btn-cut" class="tool-btn group relative flex flex-col items-center p-2 md:p-3 rounded bg-gray-700 hover:bg-gray-600 border border-gray-600 w-1/4 md:w-32 transition-all">
+                <div class="text-blue-400 mb-1 text-xl md:text-2xl"><i class="fas fa-arrow-trend-up"></i></div>
+                <div class="text-xs md:text-sm font-bold text-gray-200">利下げ</div>
+                <div class="text-[10px] text-gray-400 hidden md:block">経済刺激 (+1)</div>
+                <div class="text-[10px] text-blue-300 font-mono">範囲: 十字</div>
+            </button>
+
+            <!-- Tool: Interest Rate Hike (Cool down) -->
+            <button onclick="selectTool('hike')" id="btn-hike" class="tool-btn group relative flex flex-col items-center p-2 md:p-3 rounded bg-gray-700 hover:bg-gray-600 border border-gray-600 w-1/4 md:w-32 transition-all">
+                <div class="text-red-400 mb-1 text-xl md:text-2xl"><i class="fas fa-arrow-trend-down"></i></div>
+                <div class="text-xs md:text-sm font-bold text-gray-200">利上げ</div>
+                <div class="text-[10px] text-gray-400 hidden md:block">インフレ抑制 (-1)</div>
+                <div class="text-[10px] text-red-300 font-mono">範囲: 十字</div>
+            </button>
+
+            <!-- Tool: Quantitative Easing (Big Boost) -->
+            <button onclick="selectTool('qe')" id="btn-qe" class="tool-btn group relative flex flex-col items-center p-2 md:p-3 rounded bg-gray-700 hover:bg-gray-600 border border-gray-600 w-1/4 md:w-32 transition-all">
+                <div class="text-green-400 mb-1 text-xl md:text-2xl"><i class="fas fa-money-bill-wave"></i></div>
+                <div class="text-xs md:text-sm font-bold text-gray-200">量的緩和</div>
+                <div class="text-[10px] text-gray-400 hidden md:block">強力な刺激 (+2)</div>
+                <div class="text-[10px] text-green-300 font-mono">範囲: 3x3</div>
+            </button>
+
+             <!-- Tool: Tightening (Big Cool) -->
+             <button onclick="selectTool('qt')" id="btn-qt" class="tool-btn group relative flex flex-col items-center p-2 md:p-3 rounded bg-gray-700 hover:bg-gray-600 border border-gray-600 w-1/4 md:w-32 transition-all">
+                <div class="text-purple-400 mb-1 text-xl md:text-2xl"><i class="fas fa-hand-holding-dollar"></i></div>
+                <div class="text-xs md:text-sm font-bold text-gray-200">引き締め</div>
+                <div class="text-[10px] text-gray-400 hidden md:block">強力な抑制 (-2)</div>
+                <div class="text-[10px] text-purple-300 font-mono">範囲: 3x3</div>
+            </button>
+        </div>
+    </footer>
+
+    <!-- Overlay: Tutorial / Game Over -->
+    <div id="overlay" class="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4">
+        <div class="bg-gray-800 border border-yellow-600 rounded-lg max-w-lg w-full p-6 shadow-2xl relative overflow-hidden">
+            <!-- Decorative line -->
+            <div class="absolute top-0 left-0 w-full h-1 bg-yellow-500"></div>
+
+            <div id="overlay-content" class="text-center">
+                <div class="mb-4 text-5xl text-yellow-500"><i class="fas fa-university"></i></div>
+                <h2 class="text-2xl font-bold text-white mb-2 font-serif">総裁就任のお知らせ</h2>
+                <p class="text-gray-300 mb-6 text-sm leading-relaxed text-left">
+                    あなたは本日より中央銀行の総裁に任命されました。<br><br>
+                    <strong class="text-yellow-400">任務：</strong><br>
+                    市場（グリッド）の過熱（赤）と冷え込み（青）をコントロールし、物価を安定（緑・0付近）させてください。<br><br>
+                    <strong class="text-yellow-400">操作：</strong><br>
+                    下のツールを選択し、グリッドをタップして介入します。<br>
+                    市場は常に変動し続けます。手遅れになる前に対応してください。
+                </p>
+                <button onclick="startGame()" class="bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-3 px-8 rounded shadow-lg transform transition hover:scale-105">
+                    就任する (Start)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Game Config & State ---
+        const GRID_SIZE = 5;
+        const MAX_VALUE = 6; // Values clamp between -MAX and +MAX
+        const DANGER_THRESHOLD = 5;
+        const TARGET_INFLATION = 0; // Internal value 0 maps to "2%" aesthetically
+        
+        let grid = [];
+        let score = 0; // Months survived
+        let isPlaying = false;
+        let currentTool = 'hike'; // 'hike', 'cut', 'qe', 'qt'
+        let marketInterval;
+        let difficulty = 1;
+        let lastClickTime = 0;
+
+        // Sounds (Visual representation via text only requested, but we'll use logs/visuals)
+        
+        // --- Tools Definition ---
+        const TOOLS = {
+            'cut': { name: '利下げ', val: 1, type: 'cross', color: 'text-blue-400' },
+            'hike': { name: '利上げ', val: -1, type: 'cross', color: 'text-red-400' },
+            'qe': { name: '量的緩和', val: 2, type: 'area', color: 'text-green-400' },
+            'qt': { name: '引き締め', val: -2, type: 'area', color: 'text-purple-400' }
+        };
+
+        // --- DOM Elements ---
+        const gridEl = document.getElementById('game-grid');
+        const overlay = document.getElementById('overlay');
+        const overlayContent = document.getElementById('overlay-content');
+        const scoreEl = document.getElementById('score-display');
+        const cpiBar = document.getElementById('cpi-bar');
+        const cpiValue = document.getElementById('cpi-value');
+        const stabilityText = document.getElementById('stability-text');
+        const newsFeed = document.getElementById('news-feed');
+
+        // --- Initialization ---
+        function initGrid() {
+            gridEl.innerHTML = '';
+            grid = [];
+            for (let y = 0; y < GRID_SIZE; y++) {
+                let row = [];
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    row.push(0); // Start stable
+                    const cell = document.createElement('div');
+                    cell.className = 'grid-cell w-12 h-12 md:w-16 md:h-16 rounded border border-gray-700 flex items-center justify-center font-bold text-sm md:text-xl number-font select-none relative';
+                    cell.dataset.x = x;
+                    cell.dataset.y = y;
+                    cell.onclick = () => handleCellClick(x, y);
+                    gridEl.appendChild(cell);
+                }
+                grid.push(row);
+            }
+            updateGridVisuals();
+            selectTool('hike'); // Default
+        }
+
+        // --- Game Loop Logic ---
+        function startGame() {
+            initGrid();
+            score = 0;
+            difficulty = 1;
+            isPlaying = true;
+            updateScore();
+            overlay.classList.add('hidden');
+            
+            addNews("新総裁が就任しました。市場は様子見ムードです。");
+            addNews("物価目標2%の維持を宣言。");
+
+            // Market Fluctuations Loop
+            if (marketInterval) clearInterval(marketInterval);
+            marketInterval = setInterval(marketTick, 2000); // Initial speed
+        }
+
+        function marketTick() {
+            if (!isPlaying) return;
+
+            // 1. Random Fluctuation
+            // Pick a random cell
+            const rx = Math.floor(Math.random() * GRID_SIZE);
+            const ry = Math.floor(Math.random() * GRID_SIZE);
+            
+            // Bias: If global is too low, maybe market corrects up? Or trends persist?
+            // Let's make it random walk with momentum.
+            const change = Math.random() > 0.5 ? 1 : -1;
+            
+            // Apply shock
+            applyValue(rx, ry, change, false);
+
+            // 2. Sector Contagion (Neighbor influence) - slight chance
+            if (Math.random() > 0.7) {
+                const neighbors = [[0,1], [0,-1], [1,0], [-1,0]];
+                neighbors.forEach(([dx, dy]) => {
+                    const nx = rx + dx, ny = ry + dy;
+                    if (nx >= 0 && nx < GRID_SIZE && ny >= 0 && ny < GRID_SIZE) {
+                        // Pull neighbor slightly towards the changed cell
+                        if (grid[ry][rx] > 2) applyValue(nx, ny, 1, false);
+                        if (grid[ry][rx] < -2) applyValue(nx, ny, -1, false);
+                    }
+                });
+            }
+
+            // 3. Difficulty / Time
+            score++;
+            if (score % 10 === 0) {
+                difficulty += 0.1;
+                addNews(`任期 ${score}ヶ月経過: 決算報告。`);
+                // Speed up slightly
+                clearInterval(marketInterval);
+                marketInterval = setInterval(marketTick, Math.max(500, 2000 - (score * 10)));
+            }
+            updateScore();
+
+            // 4. Random News Events
+            if (Math.random() < 0.1) {
+                triggerEvent();
+            }
+
+            updateStats();
+        }
+
+        // --- Interaction ---
+        function selectTool(toolKey) {
+            currentTool = toolKey;
+            
+            // UI Update
+            document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('selected-tool', 'bg-gray-600'));
+            const btn = document.getElementById('btn-' + toolKey);
+            btn.classList.add('selected-tool', 'bg-gray-600');
+        }
+
+        function handleCellClick(x, y) {
+            if (!isPlaying) return;
+
+            const tool = TOOLS[currentTool];
+            
+            // Visual feedback spawn point
+            const cellsToAnimate = [];
+
+            if (tool.type === 'cross') {
+                // Target and Neighbors (Cross)
+                const targets = [[0,0], [0,1], [0,-1], [1,0], [-1,0]];
+                targets.forEach(([dx, dy]) => {
+                    const nx = x + dx, ny = y + dy;
+                    if (nx >= 0 && nx < GRID_SIZE && ny >= 0 && ny < GRID_SIZE) {
+                        applyValue(nx, ny, tool.val, true);
+                        cellsToAnimate.push({x: nx, y: ny});
+                    }
+                });
+            } else if (tool.type === 'area') {
+                // 3x3 Area
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dx = -1; dx <= 1; dx++) {
+                        const nx = x + dx, ny = y + dy;
+                        if (nx >= 0 && nx < GRID_SIZE && ny >= 0 && ny < GRID_SIZE) {
+                            applyValue(nx, ny, tool.val, true);
+                            cellsToAnimate.push({x: nx, y: ny});
+                        }
+                    }
+                }
+            }
+
+            // Trigger animations
+            cellsToAnimate.forEach(pos => showFloatText(pos.x, pos.y, tool.val > 0 ? "+" + tool.val : tool.val));
+            updateStats();
+        }
+
+        function applyValue(x, y, delta, isPlayerAction) {
+            grid[y][x] += delta;
+            
+            // Clamp values
+            if (grid[y][x] > MAX_VALUE) grid[y][x] = MAX_VALUE;
+            if (grid[y][x] < -MAX_VALUE) grid[y][x] = -MAX_VALUE;
+
+            updateCellVisual(x, y);
+        }
+
+        // --- Visuals ---
+        function updateGridVisuals() {
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    updateCellVisual(x, y);
+                }
+            }
+        }
+
+        function updateCellVisual(x, y) {
+            const val = grid[y][x];
+            const index = y * GRID_SIZE + x;
+            const cell = gridEl.children[index];
+            
+            // Clear classes
+            cell.className = 'grid-cell w-12 h-12 md:w-16 md:h-16 rounded border flex items-center justify-center font-bold text-sm md:text-xl number-font select-none relative transition-colors duration-300';
+            
+            // Colors logic
+            // 0 = Green (Stable)
+            // + = Red (Hot)
+            // - = Blue (Cold)
+            
+            let bgClass = '';
+            let textClass = 'text-white';
+            let borderClass = 'border-gray-600';
+
+            if (val === 0) {
+                bgClass = 'bg-green-900 bg-opacity-40';
+                textClass = 'text-green-200';
+                borderClass = 'border-green-800';
+                cell.innerHTML = '<span class="text-xs text-green-500">2%</span>'; // Representing target
+            } else if (val > 0) {
+                // Inflation
+                const intensity = Math.min(val, 5) * 100 + 400; // 500 to 900 roughly
+                // Use style for more granular control or just classes
+                if (val >= DANGER_THRESHOLD) {
+                    bgClass = 'bg-red-600 animate-pulse';
+                    textClass = 'text-white';
+                    cell.innerHTML = `<i class="fas fa-fire"></i>`;
+                } else {
+                    const opacity = val / MAX_VALUE;
+                    cell.style.backgroundColor = `rgba(220, 38, 38, ${0.2 + opacity * 0.6})`; // Red base
+                    cell.innerHTML = `+${val}`;
+                }
+                borderClass = 'border-red-500';
+            } else {
+                // Deflation
+                if (val <= -DANGER_THRESHOLD) {
+                    bgClass = 'bg-blue-600 animate-pulse';
+                    textClass = 'text-white';
+                    cell.innerHTML = `<i class="fas fa-snowflake"></i>`;
+                } else {
+                    const opacity = Math.abs(val) / MAX_VALUE;
+                    cell.style.backgroundColor = `rgba(37, 99, 235, ${0.2 + opacity * 0.6})`; // Blue base
+                    cell.innerHTML = `${val}`;
+                }
+                borderClass = 'border-blue-500';
+            }
+
+            // Don't override inline style if set above for gradients
+            if (!cell.style.backgroundColor) {
+               cell.classList.add(bgClass.split(' ')); 
+            }
+            cell.classList.add(textClass, borderClass);
+            if(bgClass) cell.classList.add(...bgClass.split(' '));
+        }
+
+        function showFloatText(x, y, text) {
+            const index = y * GRID_SIZE + x;
+            const cell = gridEl.children[index];
+            const el = document.createElement('div');
+            el.className = 'policy-effect text-white';
+            el.innerText = text;
+            // Center in cell
+            el.style.left = '50%';
+            el.style.top = '50%';
+            el.style.transform = 'translate(-50%, -50%)';
+            cell.appendChild(el);
+            setTimeout(() => el.remove(), 1000);
+        }
+
+        function updateStats() {
+            // Calculate Global Average
+            let sum = 0;
+            let maxVal = 0;
+            let dangerCount = 0;
+
+            grid.forEach(row => row.forEach(v => {
+                sum += v;
+                if (Math.abs(v) > maxVal) maxVal = Math.abs(v);
+                if (Math.abs(v) >= DANGER_THRESHOLD) dangerCount++;
+            }));
+            
+            const avg = sum / (GRID_SIZE * GRID_SIZE);
+            
+            // Update UI Bar
+            // Map avg from -5 to +5 -> 0% to 100%
+            const percentage = ((avg + 5) / 10) * 100;
+            const clampedPct = Math.max(5, Math.min(95, percentage));
+            cpiBar.style.left = `${clampedPct}%`;
+
+            // Display Values
+            // Convert internal value to "CPI %" for flavor
+            // 0 = 2.0%, +1 = 3.0%, -1 = 1.0%
+            const cpiDisplay = (2.0 + avg).toFixed(1);
+            cpiValue.innerText = `${cpiDisplay}%`;
+            
+            if (cpiDisplay >= 4.0) {
+                cpiValue.className = "text-red-500 font-bold text-lg animate-pulse";
+                stabilityText.innerText = "警告：ハイパーインフレ";
+                stabilityText.className = "text-center text-xs mt-1 font-bold text-red-500";
+            } else if (cpiDisplay <= 0.0) {
+                cpiValue.className = "text-blue-500 font-bold text-lg animate-pulse";
+                stabilityText.innerText = "警告：デフレスパイラル";
+                stabilityText.className = "text-center text-xs mt-1 font-bold text-blue-500";
+            } else {
+                cpiValue.className = "text-white font-bold text-lg";
+                stabilityText.innerText = "市場安定";
+                stabilityText.className = "text-center text-xs mt-1 font-bold text-green-500";
+            }
+
+            // Game Over Check
+            // 1. Too many danger cells
+            if (dangerCount >= 5) {
+                gameOver("複数のセクターが破綻しました。市場の信頼が失われました。");
+            }
+            // 2. Global Average too extreme
+            if (avg > 3.5) {
+                gameOver("通貨の価値が暴落しました。ジンバブエ状態です。");
+            }
+            if (avg < -3.5) {
+                gameOver("深刻な不況により経済が停止しました。");
+            }
+        }
+
+        function updateScore() {
+            scoreEl.innerText = `${score}ヶ月`;
+        }
+
+        function addNews(text) {
+            const p = document.createElement('p');
+            p.innerText = `> ${text}`;
+            p.className = "border-l-2 border-gray-600 pl-2 mb-1";
+            newsFeed.prepend(p);
+            // Limit history
+            if (newsFeed.children.length > 10) {
+                newsFeed.lastChild.remove();
+            }
+        }
+
+        function triggerEvent() {
+            const events = [
+                { text: "原油価格が高騰！コストプッシュ・インフレの懸念。", impact: 1 },
+                { text: "海外市場で株価暴落。リスク回避の円高。", impact: -1 },
+                { text: "政府が大型予算を編成。景気刺激。", impact: 1 },
+                { text: "消費税増税の噂で消費が冷え込んでいます。", impact: -1 },
+                { text: "AI産業のブームで投資が過熱。", impact: 2, single: true }
+            ];
+            
+            const ev = events[Math.floor(Math.random() * events.length)];
+            addNews(ev.text);
+
+            if (ev.single) {
+                 const rx = Math.floor(Math.random() * GRID_SIZE);
+                 const ry = Math.floor(Math.random() * GRID_SIZE);
+                 applyValue(rx, ry, ev.impact, false);
+            } else {
+                // Global minor shift
+                grid.forEach((row, y) => row.forEach((val, x) => {
+                    if (Math.random() > 0.7) applyValue(x, y, ev.impact, false);
+                }));
+            }
+        }
+
+        function gameOver(reason) {
+            isPlaying = false;
+            clearInterval(marketInterval);
+            
+            const title = "総裁解任";
+            
+            overlayContent.innerHTML = `
+                <div class="mb-4 text-5xl text-red-500"><i class="fas fa-newspaper"></i></div>
+                <h2 class="text-3xl font-bold text-white mb-2 font-serif text-red-500">${title}</h2>
+                <div class="text-xl text-yellow-500 mb-4 font-mono">在任期間: ${score}ヶ月</div>
+                <p class="text-gray-300 mb-6 text-sm text-left border p-3 rounded border-gray-700 bg-gray-900">
+                    理由：<br>${reason}
+                </p>
+                <button onclick="startGame()" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-8 rounded shadow-lg border border-gray-500">
+                    再挑戦する
+                </button>
+            `;
+            overlay.classList.remove('hidden');
+        }
+
+        // --- Start ---
+        // Initial setup handled by overlay button
+    </script>
+</body>
+</html>
